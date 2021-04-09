@@ -26,10 +26,8 @@ using namespace std;
 int main(int argc, char **argv) {
 
   cmdline::parser parser;
-  parser.add<std::string>("input_data_path",'\0',"",false,"./val_imgs");
-  parser.add<std::string>("model_dir",'\0',"",false,"./model/ch_ppocr_mobile_v2.0_det_infer/");
-  parser.add<std::string>("src_dir",'\0',"",false,"./data/all-sum-510/");
-  parser.add<std::string>("save_path",'\0',"",false,"./data/run_data_cpp/");
+  parser.add<std::string>("input_data_path",'\0',"",false,"./data/val_imgs");
+  parser.add<std::string>("model_dir",'\0',"",false,"./model/fcn_hrnetw18_small_v1_not_fix_shape_argmax_humanseg_192x192_bs64_lr0.1_iter2w_horizontal_distort/");
   parser.add<int>("channel",'\0',"",false,3);
   parser.add<int>("height",'\0',"",false,192);
   parser.add<int>("width",'\0',"",false,192);
@@ -45,11 +43,9 @@ int main(int argc, char **argv) {
 
   std::string input_data_path = parser.get<std::string>("input_data_path");
   std::string model_dir = parser.get<std::string>("model_dir");
-  std::string src_dir = parser.get<std::string>("src_dir");
-  std::string save_path = parser.get<std::string>("save_path");
-  int channel = parser.get<int>("channel")
-  int height = parser.get<int>("height")
-  int width = parser.get<int>("width")
+  int channel = parser.get<int>("channel");
+  int height = parser.get<int>("height");
+  int width = parser.get<int>("width");
 
   bool use_gpu = parser.get<bool>("use_gpu");
   bool use_mkldnn = parser.get<bool>("use_mkldnn");
@@ -65,8 +61,8 @@ int main(int argc, char **argv) {
   /////////////////////////////////////
   /////////////////////////////////////
   paddle_infer::Config config;
-  config.SetModel(model_dir + "/inference.pdmodel",
-                  model_dir + "/inference.pdiparams");
+  config.SetModel(model_dir + "model.pdmodel",
+                  model_dir + "model.pdiparams");
 
   if (use_gpu) {
     config.EnableUseGpu(gpu_mem, gpu_id);
@@ -101,23 +97,21 @@ int main(int argc, char **argv) {
 
   // showAllFiles(input_data_path.c_str(), all_inputs);
   if (input_data_path.empty()) {
-    LOG(FATAL) << "FLAGS_input_data_path is empty.";
+    cout << "FLAGS_input_data_path is empty.";
   }
   std::ifstream input_fs(input_data_path, std::ios::binary);
   if (!input_fs.is_open()) {
-      LOG(FATAL) << "open input image " << input_data_path << " error.";
+      cout << "open input image " << input_data_path << " error.";
   }
-
   int64_t img_nums = 0;
   input_fs.read((char*)&img_nums, sizeof(img_nums));
-
   std::ofstream output_fs("predict.bin", std::ios::binary);
 
   for (int img_idx = 0 ; img_idx < img_nums ; img_idx++){
-      img_size = 1 * channel * height * width
+      int img_size = 1 * channel * height * width;
       std::vector<float> input_data(img_size, 0.0f);
-      input_fs.read((char*)input_data, sizeof(float)*img_size);
 
+      input_fs.read((char*)&input_data[0], sizeof(float)*img_size);
 
       // Inference.
       auto input_names = predictor->GetInputNames();
@@ -127,7 +121,7 @@ int main(int argc, char **argv) {
 
       predictor->Run();
 
-      std::vector<float> out_data;
+      std::vector<int64_t> out_data;
       auto output_names = predictor->GetOutputNames();
       auto output_t = predictor->GetOutputHandle(output_names[0]);
       std::vector<int> output_shape = output_t->shape();
@@ -138,7 +132,7 @@ int main(int argc, char **argv) {
       output_t->CopyToCpu(out_data.data());
       ////////////////////////////////////////
 
-      output_fs.write((char*)out_data, sizeof(int64_t) * out_size);
+      output_fs.write((char*)&out_data[0], sizeof(int64_t) * out_size);
 
       // ofstream out_file(save_path + all_inputs[img_idx]);
 
