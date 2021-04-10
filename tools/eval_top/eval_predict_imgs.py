@@ -1,4 +1,5 @@
 import os
+import argparse
 
 import numpy as np
 from PIL import Image
@@ -12,9 +13,28 @@ from paddleseg.transforms import Resize
 
 np.set_printoptions(suppress=True)
 
-val_path = 'data/mini_supervisely/val.txt'
-label_dir = 'data/mini_supervisely'
-pred_dir = 'deploy/not_fix_shape/predict'
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Model prediction')
+
+    parser.add_argument(
+        "--val_path",
+        dest="val_path",
+        help="",
+        default='data/mini_supervisely/val.txt',
+        type=str)
+    parser.add_argument(
+        '--label_dir',
+        dest='label_dir',
+        help='',
+        type=str,
+        default='data/mini_supervisely')
+    parser.add_argument(
+        '--pred_dir', dest='pred_dir', type=str, default='./predict')
+    return parser.parse_args()
+
+
+args = parse_args()
 num_classes = 2
 ignore_index = 255
 transforms = [Resize((192, 192))]
@@ -22,19 +42,19 @@ transforms = [Resize((192, 192))]
 intersect_area_all = 0
 pred_area_all = 0
 label_area_all = 0
-with open(val_path, 'r') as f:
+with open(args.val_path, 'r') as f:
     lines = f.readlines()
     num_images = len(lines)
     for line in lines:
         img_path, label = line.split()
-        label_path = os.path.join(label_dir, label)
+        label_path = os.path.join(args.label_dir, label)
         label = np.asarray(Image.open(label_path))
 
         label = label.astype('int64')
 
         ori_shape = label.shape[-2:]
         img_path = img_path.rsplit('.')[0] + '.png'
-        pred_path = os.path.join(pred_dir, img_path)
+        pred_path = os.path.join(args.pred_dir, img_path)
         pred = np.asarray(Image.open(pred_path))
         pred = paddle.to_tensor(pred, dtype='int32')
         pred = pred.unsqueeze((0, 1))

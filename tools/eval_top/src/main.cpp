@@ -103,17 +103,15 @@ int main(int argc, char **argv) {
   if (!input_fs.is_open()) {
       cout << "open input image " << input_data_path << " error.";
   }
-
   int64_t img_nums = 0;
   input_fs.read((char*)&img_nums, sizeof(img_nums));
-
   std::ofstream output_fs("predict.bin", std::ios::binary);
 
   for (int img_idx = 0 ; img_idx < img_nums ; img_idx++){
       int img_size = 1 * channel * height * width;
       std::vector<float> input_data(img_size, 0.0f);
-      input_fs.read((char*)&input_data, sizeof(float)*img_size);
 
+      input_fs.read((char*)&input_data[0], sizeof(float)*img_size);
 
       // Inference.
       auto input_names = predictor->GetInputNames();
@@ -123,7 +121,7 @@ int main(int argc, char **argv) {
 
       predictor->Run();
 
-      std::vector<float> out_data;
+      std::vector<int64_t> out_data;
       auto output_names = predictor->GetOutputNames();
       auto output_t = predictor->GetOutputHandle(output_names[0]);
       std::vector<int> output_shape = output_t->shape();
@@ -134,7 +132,7 @@ int main(int argc, char **argv) {
       output_t->CopyToCpu(out_data.data());
       ////////////////////////////////////////
 
-      output_fs.write((char*)&out_data, sizeof(int64_t) * out_size);
+      output_fs.write((char*)&out_data[0], sizeof(int64_t) * out_size);
 
       // ofstream out_file(save_path + all_inputs[img_idx]);
 

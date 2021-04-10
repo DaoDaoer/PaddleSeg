@@ -1,16 +1,32 @@
 import numpy as np
 import os
+import argparse
 from PIL import Image
 import struct
 from paddleseg import utils
 
-val_path = 'data/mini_supervisely/val.txt'
-bin_file_path = './deploy/not_fix_shape_argmax/predict.bin'
-
-save_dir = './deploy/not_fix_shape_argmax/predict'
-
 nx, nz = 192, 192
 channel = 2
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Model prediction')
+
+    parser.add_argument(
+        "--val_path",
+        dest="val_path",
+        help="",
+        default='data/mini_supervisely/val.txt',
+        type=str)
+    parser.add_argument(
+        '--bin_file_path',
+        dest='bin_file_path',
+        help='',
+        type=str,
+        default='predict.bin')
+    parser.add_argument(
+        '--save_dir', dest='save_dir', type=str, default='./predict')
+    return parser.parse_args()
 
 
 def mkdir(path):
@@ -19,11 +35,11 @@ def mkdir(path):
         os.makedirs(sub_dir)
 
 
-# with open(val_path, 'r') as f:
+# with open(args.val_path, 'r') as f:
 #     lines = f.readlines()
 #     num_images = len(lines)
 
-#     with open(bin_file_path, "rb") as of:
+#     with open(args.bin_file_path, "rb") as of:
 #         pic = np.zeros((channel, nx, nz), dtype=np.float32)
 #         count = 0
 #         for n in range(num_images):
@@ -38,18 +54,19 @@ def mkdir(path):
 #             line = lines[n]
 #             img_path, label = line.split()
 #             pred_mask = utils.visualize.get_pseudo_color_map(pred)
-#             pred_saved_path = os.path.join(save_dir, img_path.rsplit(".")[0] + ".png")
+#             pred_saved_path = os.path.join(args.save_dir, img_path.rsplit(".")[0] + ".png")
 #             mkdir(pred_saved_path)
 #             pred_mask.save(pred_saved_path)
 #             count += 1
 #             print(count)
 
+args = parse_args()
 # has argmax before
-with open(val_path, 'r') as f:
+with open(args.val_path, 'r') as f:
     lines = f.readlines()
     num_images = len(lines)
 
-    with open(bin_file_path, "rb") as of:
+    with open(args.bin_file_path, "rb") as of:
         pic = np.zeros((nx, nz), dtype=np.int64)
         count = 0
         for n in range(num_images):
@@ -62,9 +79,10 @@ with open(val_path, 'r') as f:
             line = lines[n]
             img_path, label = line.split()
             pred_mask = utils.visualize.get_pseudo_color_map(pic)
-            pred_saved_path = os.path.join(save_dir,
+            pred_saved_path = os.path.join(args.save_dir,
                                            img_path.rsplit(".")[0] + ".png")
             mkdir(pred_saved_path)
             pred_mask.save(pred_saved_path)
             count += 1
-            print(count)
+            if count % 20 == 0:
+                print(count)
