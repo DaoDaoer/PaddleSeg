@@ -1,6 +1,6 @@
-#include "opencv2/core.hpp"
-#include "opencv2/imgcodecs.hpp"
-#include "opencv2/imgproc.hpp"
+// #include "opencv2/core.hpp"
+// #include "opencv2/imgcodecs.hpp"
+// #include "opencv2/imgproc.hpp"
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include "paddle_api.h"
 #include "paddle_inference_api.h"
+#include "glog/logging.h"
 #include <numeric>
 
 using namespace paddle_infer;
@@ -57,9 +58,7 @@ int main(int argc, char **argv) {
   int cpu_math_library_num_threads = parser.get<int>("cpu_math_library_num_threads");
 
 
-  /////////////////////////////////////
-  /////////////////////////////////////
-  /////////////////////////////////////
+  ///////////////////////////////////// config
   paddle_infer::Config config;
   config.SetModel(model_dir + "model.pdmodel",
                   model_dir + "model.pdiparams");
@@ -89,13 +88,7 @@ int main(int argc, char **argv) {
 
   std::shared_ptr<Predictor> predictor = CreatePredictor(config);
   /////////////////////////////////////
-  /////////////////////////////////////
-  /////////////////////////////////////
 
-
-  // std::vector<std::string> all_inputs;
-
-  // showAllFiles(input_data_path.c_str(), all_inputs);
   if (input_data_path.empty()) {
     cout << "FLAGS_input_data_path is empty.";
   }
@@ -104,8 +97,11 @@ int main(int argc, char **argv) {
       cout << "open input image " << input_data_path << " error.";
   }
   int64_t img_nums = 0;
+  int batch_size = 1;
   input_fs.read((char*)&img_nums, sizeof(img_nums));
   std::ofstream output_fs("predict.bin", std::ios::binary);
+
+  Timer infer_time;
 
   for (int img_idx = 0 ; img_idx < img_nums ; img_idx++){
       int img_size = 1 * channel * height * width;
@@ -114,6 +110,7 @@ int main(int argc, char **argv) {
       input_fs.read((char*)&input_data[0], sizeof(float)*img_size);
 
       // Inference.
+      infer_time.start()
       auto input_names = predictor->GetInputNames();
       auto input_t = predictor->GetInputHandle(input_names[0]);
       input_t->Reshape({1, channel, height, width});
@@ -130,26 +127,63 @@ int main(int argc, char **argv) {
 
       out_data.resize(out_size);
       output_t->CopyToCpu(out_data.data());
+      infer_time.stop()
       ////////////////////////////////////////
 
       output_fs.write((char*)&out_data[0], sizeof(int64_t) * out_size);
 
-      // ofstream out_file(save_path + all_inputs[img_idx]);
 
-      // for (int idx_h = 0; idx_h < height; idx_h++){
-      //   for (int idx_w = 0; idx_w < width; idx_w++){
+  LOG(INFO) << "----------------------- Model info ----------------------";
+  LOG(INFO) << "Model name: " << "fcn_hrnetw18_small_v1" ;
+  LOG(INFO) << "----------------------- Data info -----------------------";
+  LOG(INFO) << "Batch size: " << batch_size << ", " \
+              "Num of samples: " << img_nums;
+  LOG(INFO) << "input_shape: "
+          << "dynamic shape";
+  LOG(INFO) << "----------------------- Conf info -----------------------";
+    LOG(INFO) << "device: " << (config.use_gpu() ? "gpu" : "cpu") << ", " \
+                "ir_optim: " << (config.ir_optim() ? "true" : "false");
+    LOG(INFO) << "enable_memory_optim: " << (config.enable_memory_optim() ? "true" : "false");
+    if (config.use_gpu()) {
+      LOG(INFO) << "enable_tensorrt: " << (config.tensorrt_engine_enabled() ? "true" : "false");
+      if (config.tensorrt_engine_enabled()) {
+        LOG(INFO) << "precision: " << (config.use_fp16 ? "fp16" : "fp32");
+      }
+    }else {
+      LOG(INFO) << "enable_mkldnn: " << (config.mkldnn_enabled() ? "true" : "false");
+      LOG(INFO) << "cpu_math_library_num_threads: " << config.cpu_math_library_num_threads();
+    }
+  LOG(INFO) << "----------------------- Perf info -----------------------";
+  LOG(INFO) << "Average latency(ms): " << infer_time.report() / img_nums;
 
-      //     out_file << ("%.6f", out_data[idx_h * width + idx_w]);
-
-      //     if (idx_w == width - 1){
-      //       out_file << '\n';
-      //     }else{
-      //       out_file << ' ';
-      //     }
-      //   }
-      // }
-
-      // //cout << img_idx <<"  /  " << img_nums << endl;
   }
   return 0;
 }
+
+
+class Timer {
+// Timer, count in ms
+  public:
+      Timer() {
+          reset();
+      }
+      void start() {
+          start_t = std::chrono::high_resolution_clock::now();
+      }
+      void stop() {
+          auto end_t = std::chrono::high_resolution_clock::now();
+          typedef std::chrono::microseconds ms;
+          auto diff = end_t - start_t;
+          ms counter = std::chrono::duration_cast<ms>(diff);
+          total_time += counter.count();
+      }
+      void reset() {
+          total_time = 0.;
+      }
+      double report() {
+          return total_time / 1000.0;
+      }
+  private:
+      double total_time;
+      std::chrono::high_resolution_clock::time_point start_t;
+};

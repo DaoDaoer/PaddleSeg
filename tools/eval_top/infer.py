@@ -15,7 +15,11 @@
 import argparse
 import codecs
 import os
+import time
 
+import pynvml
+import psutil
+import GPUtil
 import yaml
 import numpy as np
 import paddleseg.transforms as T
@@ -24,6 +28,71 @@ from paddle.inference import Config as PredictConfig
 from paddleseg.cvlibs import manager
 from paddleseg.utils import get_sys_env, logger
 from paddleseg.utils.visualize import get_pseudo_color_map
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Model training')
+    # params of training
+    parser.add_argument(
+        "--config",
+        dest="cfg",
+        help="The config file.",
+        default=None,
+        type=str,
+        required=True)
+    parser.add_argument(
+        '--data_dir',
+        dest='data_dir',
+        help='The directory or path of the image to be predicted.',
+        type=str,
+        default=None,
+        required=True)
+    parser.add_argument(
+        '--file_path',
+        dest='file_path',
+        help='The directory or path of the image to be predicted.',
+        type=str,
+        default=None,
+        required=True)
+    parser.add_argument(
+        '--batch_size',
+        dest='batch_size',
+        help='Mini batch size of one gpu or cpu.',
+        type=int,
+        default=1)
+    parser.add_argument(
+        '--save_dir',
+        dest='save_dir',
+        help='The directory for saving the predict result.',
+        type=str,
+        default='./output')
+    parser.add_argument(
+        '--without_argmax',
+        dest='without_argmax',
+        help='Do not perform argmax operation on the predict result.',
+        action='store_true')
+
+    def str2bool(v):
+        return v.lower() in ("true", "t", "1")
+
+    # params for prediction engine
+    parser.add_argument("--device", type=str, default='gpu')
+    parser.add_argument("--cpu_threads", type=int, default=6)
+    parser.add_argument("--enable_mkldnn", type=str2bool, default=False)
+    parser.add_argument(
+        '--use_trt',
+        dest='use_trt',
+        help='Whether to use Nvidia TensorRT to accelerate prediction.',
+        type=str2bool,
+        default=False)
+    parser.add_argument(
+        '--use_int8',
+        dest='use_int8',
+        help='Whether to use Int8 prediction when using TensorRT prediction.',
+        type=str2bool,
+        default=False)
+
+    return parser.parse_args()
 
 
 class DeployConfig:
@@ -64,7 +133,7 @@ class Predictor:
 
         pred_cfg = PredictConfig(self.cfg.model, self.cfg.params)
         pred_cfg.disable_glog_info()
-        if self.args.use_gpu:
+        if self.args.device == 'gpu':
             pred_cfg.enable_use_gpu(100, 0)
 
             if self.args.use_trt:
@@ -76,6 +145,16 @@ class Predictor:
                     precision_mode=ptype,
                     use_static=False,
                     use_calib_mode=False)
+        else:
+            pred_cfg.disable_gpu()
+            pred_cfg.set_cpu_math_library_num_threads(args.cpu_threads)
+            if args.enable_mkldnn:
+                # cache 10 different shapes for mkldnn to avoid memory leak
+                pred_cfg.set_mkldnn_cache_capacity(10)
+                pred_cfg.enable_mkldnn()
+
+        # enable memory optim
+        pred_cfg.enable_memory_optim()
 
         self.predictor = create_predictor(pred_cfg)
 
@@ -86,24 +165,53 @@ class Predictor:
         if not isinstance(imgs, (list, tuple)):
             imgs = [imgs]
 
-        num = len(imgs)
+        self.num = len(imgs)
         input_names = self.predictor.get_input_names()
         input_handle = self.predictor.get_input_handle(input_names[0])
         results = []
 
-        for i in range(0, num, self.args.batch_size):
+        self.preprocess_time = Times()
+        self.inference_time = Times()
+        self.postprocess_time = Times()
+        cpu_mem, gpu_mem = 0, 0
+        gpu_id = 0
+        gpu_util = 0
+
+        iter_ = 0
+
+        for i in range(0, self.num, self.args.batch_size):
+            self.preprocess_time.start()
             data = np.array([
                 self.preprocess(img) for img in imgs[i:i + self.args.batch_size]
             ])
+            self.preprocess_time.end()
+
+            # inference
+            self.inference_time.start()
             input_handle.reshape(data.shape)
             input_handle.copy_from_cpu(data)
             self.predictor.run()
-
             output_names = self.predictor.get_output_names()
             output_handle = self.predictor.get_output_handle(output_names[0])
             results.append(output_handle.copy_to_cpu())
+            self.inference_time.end()
 
+            gpu_util += get_current_gputil(gpu_id)
+            cm, gm = get_current_memory_mb(gpu_id)
+            cpu_mem += cm
+            gpu_mem += gm
+
+            iter_ += 1
+
+        self.postprocess_time.start()
         self.postprocess(results, imgs)
+        self.postprocess_time.end()
+        self.avg_preprocess = self.preprocess_time.value() / self.num
+        self.avg_inference = self.inference_time.value() / self.num
+        self.avg_postprocess = self.postprocess_time.value() / self.num
+        self.avg_cpu_mem = cpu_mem / iter_
+        self.avg_gpu_mem = gpu_mem / iter_
+        self.avg_gpu_util = gpu_util / iter_
 
     def postprocess(self, results, imgs):
         if not os.path.exists(self.args.save_dir):
@@ -121,60 +229,86 @@ class Predictor:
             basename = f'{basename}.png'
             result.save(os.path.join(self.args.save_dir, basename))
 
+    def report(self):
+        if self.args.device == 'gpu':
+            self.device = 'gpu'
+        else:
+            self.device = 'cpu'
+        if self.args.use_int8:
+            self.precision = 'int8'
+        else:
+            self.precision = 'fp32'
+        print("\n")
+        print("----------------------- Conf info -----------------------")
+        print(f"runtime_device: {self.device}")
+        print(f"ir_optim: {True}")
+        print(f"enable_memory_optim: {True}")
+        print(f"enable_tensorrt: {self.args.use_trt}")
+        print(f"precision: {self.precision}")
+        print(f"enable_mkldnn: {self.args.enable_mkldnn}")
+        print(f"cpu_math_library_num_threads: {self.args.cpu_threads}")
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Model training')
-    # params of training
-    parser.add_argument(
-        "--config",
-        dest="cfg",
-        help="The config file.",
-        default=None,
-        type=str,
-        required=True)
-    parser.add_argument(
-        '--data_dir',
-        dest='data_dir',
-        help='The directory or path of the image to be predicted.',
-        type=str,
-        default=None,
-        required=True)
-    parser.add_argument(
-        '--file_path',
-        dest='file_path',
-        help='The directory or path of the image to be predicted.',
-        type=str,
-        default=None,
-        required=True)
-    parser.add_argument(
-        '--batch_size',
-        dest='batch_size',
-        help='Mini batch size of one gpu or cpu.',
-        type=int,
-        default=1)
-    parser.add_argument(
-        '--save_dir',
-        dest='save_dir',
-        help='The directory for saving the predict result.',
-        type=str,
-        default='./output')
-    parser.add_argument(
-        '--use_trt',
-        dest='use_trt',
-        help='Whether to use Nvidia TensorRT to accelerate prediction.',
-        action='store_true')
-    parser.add_argument(
-        '--use_int8',
-        dest='use_int8',
-        help='Whether to use Int8 prediction when using TensorRT prediction.',
-        action='store_true')
-    parser.add_argument(
-        '--without_argmax',
-        dest='without_argmax',
-        help='Do not perform argmax operation on the predict result.',
-        action='store_true')
+        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        print(f"----------------------- Model info ----------------------")
+        print(f"model_name: hrnet_w18_small_v1")
 
-    return parser.parse_args()
+        print(f"----------------------- Data info ----------------------")
+        print(f"batch_size: {self.args.batch_size}")
+        print(f"num_of_samples: {self.num}")
+        print(f"input_shape: 3,192,192")
+        print("----------------------- Perf info -----------------------")
+        print(
+            f"preproce_time(ms): {round(self.avg_preprocess*1000, 1)} inference_time(ms): {round(self.avg_inference*1000, 1)} postprocess_time(ms): {round(self.avg_postprocess*1000, 1)}"
+        )
+        print(
+            f"cpu_rss(MB): {int(self.avg_cpu_mem)}  gpu_rss(MB): {int(self.avg_gpu_mem)}  gpu_util: {round(self.avg_gpu_util, 1)}%"
+        )
+
+
+# create time count class
+class Times(object):
+    def __init__(self):
+        self.time = 0.
+        self.st = 0.
+        self.et = 0.
+
+    def start(self):
+        self.st = time.time()
+
+    def end(self, accumulative=True):
+        self.et = time.time()
+        if accumulative:
+            self.time += self.et - self.st
+        else:
+            self.time = self.et - self.st
+
+    def reset(self):
+        self.time = 0.
+        self.st = 0.
+        self.et = 0.
+
+    def value(self):
+        return round(self.time, 4)
+
+
+def get_current_memory_mb(gpu_id=None):
+    pid = os.getpid()
+    p = psutil.Process(pid)
+    info = p.memory_full_info()
+    cpu_mem = info.uss / 1024. / 1024.
+    gpu_mem = 0
+    if gpu_id is not None:
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        meminfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        gpu_mem = meminfo.used / 1024. / 1024.
+    return cpu_mem, gpu_mem
+
+
+def get_current_gputil(gpu_id):
+    GPUs = GPUtil.getGPUs()
+    gpu_load = GPUs[gpu_id].load
+    return gpu_load
 
 
 def get_images(file_path, data_dir):
@@ -190,11 +324,17 @@ def get_images(file_path, data_dir):
 
 def main(args):
     env_info = get_sys_env()
-    args.use_gpu = True if env_info['Paddle compiled with cuda'] and env_info[
-        'GPUs used'] else False
+    info = ['{}: {}'.format(k, v) for k, v in env_info.items()]
+    info = '\n'.join(['', format('Environment Information', '-^48s')] + info +
+                     ['-' * 48])
+    print(info)
+    # args.use_gpu = True if env_info['Paddle compiled with cuda'] and env_info[
+    #     'GPUs used'] else False
 
     predictor = Predictor(args)
     predictor.run(get_images(args.file_path, args.data_dir))
+
+    predictor.report()
 
 
 if __name__ == '__main__':
