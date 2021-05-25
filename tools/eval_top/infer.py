@@ -16,12 +16,14 @@ import argparse
 import codecs
 import os
 import time
+import sys
 
 import pynvml
 import psutil
 import GPUtil
 import yaml
 import numpy as np
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "../..")))
 import paddleseg.transforms as T
 from paddle.inference import create_predictor, PrecisionType
 from paddle.inference import Config as PredictConfig
@@ -132,7 +134,7 @@ class Predictor:
         self.args = args
 
         pred_cfg = PredictConfig(self.cfg.model, self.cfg.params)
-        pred_cfg.disable_glog_info()
+        #pred_cfg.disable_glog_info()
         if self.args.device == 'gpu':
             pred_cfg.enable_use_gpu(100, 0)
 
@@ -145,6 +147,32 @@ class Predictor:
                     precision_mode=ptype,
                     use_static=False,
                     use_calib_mode=False)
+                min_input_shape = {"x": [1, 3, 100, 100], "bilinear_interp_v2_0.tmp_0": [1, 16, 25,25], "relu_10.tmp_0": [1, 16, 25, 25], "relu_25.tmp_0":     [1, 32, 13, 13],
+                                  "batch_norm_37.tmp_2": [1, 64, 7, 7], "bilinear_interp_v2_1.tmp_0": [1, 16, 25, 25],
+                                  "bilinear_interp_v2_2.tmp_0": [1, 16, 25, 25],
+                                  "bilinear_interp_v2_3.tmp_0": [1, 32, 13, 13],
+                                  "relu_21.tmp_0": [1, 16, 25, 25],
+                                  "relu_29.tmp_0": [1, 64, 7, 7],
+                                  "relu_32.tmp_0": [1, 16, 13, 13],
+                                  "tmp_15": [1, 32, 13, 13]}
+                max_input_shape = {"x": [1, 3, 2000, 2000], "bilinear_interp_v2_0.tmp_0": [1, 16, 500, 500], "relu_10.tmp_0": [1, 16, 500, 500], "relu_25.tmp_0":     [1, 32, 250, 250],
+                                  "batch_norm_37.tmp_2": [1, 64, 125, 125], "bilinear_interp_v2_1.tmp_0": [1, 16, 500, 500],
+                                  "bilinear_interp_v2_2.tmp_0": [1, 16, 500, 500],
+                                  "bilinear_interp_v2_3.tmp_0": [1, 32, 250, 250],
+                                  "relu_21.tmp_0": [1, 16, 500, 500],
+                                  "relu_29.tmp_0": [1, 64, 125, 125],
+                                  "relu_32.tmp_0": [1, 16, 250, 250],
+                                  "tmp_15": [1, 32, 250, 250]}
+                opt_input_shape = {"x": [1, 3, 192, 192], "bilinear_interp_v2_0.tmp_0": [1, 16, 48,48], "relu_10.tmp_0": [1, 16, 48, 48], "relu_25.tmp_0": [1, 32, 24, 24], 
+                                  "batch_norm_37.tmp_2": [1, 64, 12, 12], "bilinear_interp_v2_1.tmp_0": [1, 16, 48, 48],
+                                  "bilinear_interp_v2_2.tmp_0": [1, 16, 48, 48],
+                                  "bilinear_interp_v2_3.tmp_0": [1, 32, 24, 24],
+                                  "relu_21.tmp_0": [1, 16, 48, 48],
+                                  "relu_29.tmp_0": [1, 64, 12, 12],
+                                  "relu_32.tmp_0": [1, 16, 24, 24],
+                                  "tmp_15": [1, 32, 24, 24]}
+                pred_cfg.set_trt_dynamic_shape_info(min_input_shape, max_input_shape,
+                                              opt_input_shape)
         else:
             pred_cfg.disable_gpu()
             pred_cfg.set_cpu_math_library_num_threads(args.cpu_threads)

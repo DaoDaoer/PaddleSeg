@@ -24,6 +24,35 @@ using namespace paddle_infer;
 using namespace std;
 
 
+
+class Timer {
+// Timer, count in ms
+  public:
+      Timer() {
+          reset();
+      }
+      void start() {
+          start_t = std::chrono::high_resolution_clock::now();
+      }
+      void stop() {
+          auto end_t = std::chrono::high_resolution_clock::now();
+          typedef std::chrono::microseconds ms;
+          auto diff = end_t - start_t;
+          ms counter = std::chrono::duration_cast<ms>(diff);
+          total_time += counter.count();
+      }
+      void reset() {
+          total_time = 0.;
+      }
+      double report() {
+          return total_time / 1000.0;
+      }
+  private:
+      double total_time;
+      std::chrono::high_resolution_clock::time_point start_t;
+};
+
+
 int main(int argc, char **argv) {
 
   cmdline::parser parser;
@@ -84,7 +113,7 @@ int main(int argc, char **argv) {
   config.SwitchIrOptim(true);
 
   config.EnableMemoryOptim();
-  //config.DisableGlogInfo();
+  config.DisableGlogInfo();
 
   std::shared_ptr<Predictor> predictor = CreatePredictor(config);
   /////////////////////////////////////
@@ -110,7 +139,7 @@ int main(int argc, char **argv) {
       input_fs.read((char*)&input_data[0], sizeof(float)*img_size);
 
       // Inference.
-      infer_time.start()
+      infer_time.start();
       auto input_names = predictor->GetInputNames();
       auto input_t = predictor->GetInputHandle(input_names[0]);
       input_t->Reshape({1, channel, height, width});
@@ -127,11 +156,11 @@ int main(int argc, char **argv) {
 
       out_data.resize(out_size);
       output_t->CopyToCpu(out_data.data());
-      infer_time.stop()
+      infer_time.stop();
       ////////////////////////////////////////
 
       output_fs.write((char*)&out_data[0], sizeof(int64_t) * out_size);
-
+  }
 
   LOG(INFO) << "----------------------- Model info ----------------------";
   LOG(INFO) << "Model name: " << "fcn_hrnetw18_small_v1" ;
@@ -147,7 +176,7 @@ int main(int argc, char **argv) {
     if (config.use_gpu()) {
       LOG(INFO) << "enable_tensorrt: " << (config.tensorrt_engine_enabled() ? "true" : "false");
       if (config.tensorrt_engine_enabled()) {
-        LOG(INFO) << "precision: " << (config.use_fp16 ? "fp16" : "fp32");
+        LOG(INFO) << "precision: " << (use_fp16 ? "fp16" : "fp32");
       }
     }else {
       LOG(INFO) << "enable_mkldnn: " << (config.mkldnn_enabled() ? "true" : "false");
@@ -156,34 +185,7 @@ int main(int argc, char **argv) {
   LOG(INFO) << "----------------------- Perf info -----------------------";
   LOG(INFO) << "Average latency(ms): " << infer_time.report() / img_nums;
 
-  }
   return 0;
 }
 
 
-class Timer {
-// Timer, count in ms
-  public:
-      Timer() {
-          reset();
-      }
-      void start() {
-          start_t = std::chrono::high_resolution_clock::now();
-      }
-      void stop() {
-          auto end_t = std::chrono::high_resolution_clock::now();
-          typedef std::chrono::microseconds ms;
-          auto diff = end_t - start_t;
-          ms counter = std::chrono::duration_cast<ms>(diff);
-          total_time += counter.count();
-      }
-      void reset() {
-          total_time = 0.;
-      }
-      double report() {
-          return total_time / 1000.0;
-      }
-  private:
-      double total_time;
-      std::chrono::high_resolution_clock::time_point start_t;
-};
