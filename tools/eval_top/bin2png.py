@@ -35,6 +35,9 @@ def mkdir(path):
         os.makedirs(sub_dir)
 
 
+args = parse_args()
+
+# # model has not argmax
 # with open(args.val_path, 'r') as f:
 #     lines = f.readlines()
 #     num_images = len(lines)
@@ -58,10 +61,10 @@ def mkdir(path):
 #             mkdir(pred_saved_path)
 #             pred_mask.save(pred_saved_path)
 #             count += 1
-#             print(count)
+#             if count % 20 == 0:
+#                 print(count)
 
-args = parse_args()
-# has argmax before
+# model has argmax
 with open(args.val_path, 'r') as f:
     lines = f.readlines()
     num_images = len(lines)
