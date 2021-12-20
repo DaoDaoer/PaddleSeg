@@ -162,11 +162,11 @@ def train(args,
     if args.pruning_strategy == 'gmp':
         # GMP pruner step 0: define configs. No need to do this if you are not using 'gmp'
         configs = {
-            'stable_iterations': args.stable_epochs * iters_per_epoch,  # 0
-            'pruning_iterations': args.pruning_epochs *
-            iters_per_epoch,  # original_total_iters * 0.4~0.45
-            'tunning_iterations': args.tunning_epochs *
-            iters_per_epoch,  # original_total_iters * 0.4~0.45
+            'stable_iterations': args.stable_iters,  # 0
+            'pruning_iterations':
+            args.pruning_iters,  # original_total_iters * 0.4~0.45
+            'tunning_iterations':
+            args.tunning_iters,  # original_total_iters * 0.4~0.45
             'resume_iteration':
             (args.last_epoch + 1) * iters_per_epoch,  # args.last_epoch=-1
             'pruning_steps': args.pruning_steps,  # args.pruning_epochs * 2
@@ -272,11 +272,13 @@ def train(args,
                 for val_dataset in val_datasets:
                     # GMP pruner step 3: update params before summrizing sparsity, saving model or evaluation.
                     pruner.update_params()
+                    if args.prune_params_type == 'conv1x1_only':
+                        sparse = UnstructuredPruner.total_sparse_conv1x1(model)
+                    else:
+                        sparse = UnstructuredPruner.total_sparse(model)
                     logger.info(
                         "The current sparsity of the pruned model is: {}%".
-                        format(
-                            round(100 * UnstructuredPruner.total_sparse(model),
-                                  2)))
+                        format(round(100 * sparse, 2)))
                     mean_iou, acc, class_iou, _, _ = evaluate(
                         model, val_dataset, num_workers=num_workers)
                     class_ious.append(class_iou)
