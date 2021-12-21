@@ -173,8 +173,7 @@ def train(args,
             args.pruning_iters,  # original_total_iters * 0.4~0.45
             'tunning_iterations':
             args.tunning_iters,  # original_total_iters * 0.4~0.45
-            'resume_iteration':
-            (args.last_epoch + 1) * iters_per_epoch,  # args.last_epoch=-1
+            'resume_iteration': args.resume_iter,
             'pruning_steps': args.pruning_steps,  # args.pruning_epochs * 2
             'initial_ratio': args.initial_ratio,  # 0.15
         }

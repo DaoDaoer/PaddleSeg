@@ -101,11 +101,11 @@ def parse_args():
         'The iter numbers used to tune the after-pruned models. Default: 60',
         type=int)
     parser.add_argument(
-        '--last_epoch',
-        dest='last_epoch',
-        help="The last epoch we'll train from. Default: -1",
+        '--resume_iter',
+        dest='resume_iter',
+        help="The iteration we'll resume training from. Default: 0",
         type=int,
-        default=-1)
+        default=0)
     parser.add_argument(
         '--pruning_steps',
         dest='pruning_steps',
