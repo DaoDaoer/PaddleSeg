@@ -47,5 +47,6 @@ from .ginet import GINet
 from .segmenter import *
 from .segnet import SegNet
 from .pphumansegv2_lite import PPHumanSegV1Lite
+from .pphumanseg_lite_fix_shape import PPHumanSegLiteFixShape
 from .hrnet_contrast import HRNetW48Contrast
 from .espnet import ESPNetV2

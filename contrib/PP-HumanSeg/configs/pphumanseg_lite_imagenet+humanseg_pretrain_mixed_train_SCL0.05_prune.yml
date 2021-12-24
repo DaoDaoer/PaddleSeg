@@ -3,7 +3,7 @@ iters: 9000 # 2gpu = 22 epoch
 save_interval: 400
 
 model:
-  type: PPHumanSegLite
+  type: PPHumanSegLiteFixShape
   pretrained: saved_model/pphumanseg_lite_imagenet+humanseg_pretrain_mixed_train_SCL0.05/best_model/model.pdparams
   align_corners: False
   num_classes: 2
