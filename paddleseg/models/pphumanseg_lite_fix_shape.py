@@ -67,20 +67,14 @@ class PPHumanSegLiteFixShape(nn.Layer):
         # Decoder
         x = self.depthwise_separable0(x)
         shortcut_shape = shortcut.shape[2:]
-        x = F.interpolate(
-            x,
-            shortcut_shape,
-            mode='bilinear',
-            align_corners=self.align_corners)
+        x = paddle.fluid.layers.resize_bilinear(
+            x, shortcut_shape, align_corners=self.align_corners, align_mode=0)
         x = paddle.concat(x=[shortcut, x], axis=1)
         x = self.depthwise_separable1(x)
 
         logit = self.depthwise_separable2(x)
-        logit = F.interpolate(
-            logit,
-            input_shape,
-            mode='bilinear',
-            align_corners=self.align_corners)
+        logit = paddle.fluid.layers.resize_bilinear(
+            logit, input_shape, align_corners=self.align_corners, align_mode=0)
 
         return [logit]
 
