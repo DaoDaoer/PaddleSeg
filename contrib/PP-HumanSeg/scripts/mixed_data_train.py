@@ -287,7 +287,7 @@ def train(model,
                         logger.info("[EVAL] Dataset {} IoU: {}\n".format(
                             num, str(np.round(best_dataset_ious[num], 4))))
                     logger.info("[EVAL] Total IoU: \n" +
-                                str(np.round(total_iou, 4)))
+                                str(np.round(best_total_iou, 4)))
                     logger.info(
                         '[EVAL] The best model was saved at iter {}.'.format(
                             best_model_iter))

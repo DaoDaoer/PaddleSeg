@@ -29,6 +29,7 @@ from scripts.unstructured_prune_mixed_utils import train
 
 # python unstructured_prune_mixed_train.py --ratio=0.75 --prune_params_type=conv1x1_only \
 # --local_sparsity=True --pruning_strategy=gmp \
+# --pruning_iters 4500 --tunning_iters 4500 \
 # --config ${cfg} --do_eval --num_workers 4 \
 # --save_interval 30
 
@@ -81,32 +82,30 @@ def parse_args():
         type=str,
         default='base')
     parser.add_argument(
-        '--stable_epochs',
-        dest='stable_epochs',
+        '--stable_iters',
+        dest='stable_iters',
         help=
-        "The epoch numbers used to stablize the model before pruning. Default: 0",
+        "The iter numbers used to stablize the model before pruning. Default: 0",
         type=int,
         default=0)
     parser.add_argument(
-        '--pruning_epochs',
-        dest='pruning_epochs',
+        '--pruning_iters',
+        dest='pruning_iters',
         help=
-        'The epoch numbers used to prune the model by a ratio step. Default: 60',
-        type=int,
-        default=60)
+        'The iter numbers used to prune the model by a ratio step. Default: 60',
+        type=int)
     parser.add_argument(
-        '--tunning_epochs',
-        dest='tunning_epochs',
+        '--tunning_iters',
+        dest='tunning_iters',
         help=
-        'The epoch numbers used to tune the after-pruned models. Default: 60',
-        type=int,
-        default=60)
+        'The iter numbers used to tune the after-pruned models. Default: 60',
+        type=int)
     parser.add_argument(
-        '--last_epoch',
-        dest='last_epoch',
-        help="The last epoch we'll train from. Default: -1",
+        '--resume_iter',
+        dest='resume_iter',
+        help="The iteration we'll resume training from. Default: 0",
         type=int,
-        default=-1)
+        default=0)
     parser.add_argument(
         '--pruning_steps',
         dest='pruning_steps',

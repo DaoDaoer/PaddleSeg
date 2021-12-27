@@ -42,15 +42,21 @@ def loss_computation(logits_list, labels, losses, edges=None):
     for i in range(len(logits_list)):
         logits = logits_list[i]
         loss_i = losses['types'][i]
-        # Whether to use edges as labels According to loss type.
+        coef_i = losses['coef'][i]
+
         if loss_i.__class__.__name__ in ('BCELoss',
                                          'FocalLoss') and loss_i.edge_label:
-            loss_list.append(losses['coef'][i] * loss_i(logits, edges))
+            # If use edges as labels According to loss type.
+            loss_list.append(coef_i * loss_i(logits, edges))
+        elif loss_i.__class__.__name__ == 'MixedLoss':
+            mixed_loss_list = loss_i(logits, labels)
+            for mixed_loss in mixed_loss_list:
+                loss_list.append(coef_i * mixed_loss)
         elif loss_i.__class__.__name__ in ("KLLoss", ):
-            loss_list.append(losses['coef'][i] * loss_i(
-                logits_list[0], logits_list[1].detach()))
+            loss_list.append(
+                coef_i * loss_i(logits_list[0], logits_list[1].detach()))
         else:
-            loss_list.append(losses['coef'][i] * loss_i(logits, labels))
+            loss_list.append(coef_i * loss_i(logits, labels))
     return loss_list
 
 
@@ -162,13 +168,12 @@ def train(args,
     if args.pruning_strategy == 'gmp':
         # GMP pruner step 0: define configs. No need to do this if you are not using 'gmp'
         configs = {
-            'stable_iterations': args.stable_epochs * iters_per_epoch,  # 0
-            'pruning_iterations': args.pruning_epochs *
-            iters_per_epoch,  # original_total_iters * 0.4~0.45
-            'tunning_iterations': args.tunning_epochs *
-            iters_per_epoch,  # original_total_iters * 0.4~0.45
-            'resume_iteration':
-            (args.last_epoch + 1) * iters_per_epoch,  # args.last_epoch=-1
+            'stable_iterations': args.stable_iters,  # 0
+            'pruning_iterations':
+            args.pruning_iters,  # original_total_iters * 0.4~0.45
+            'tunning_iterations':
+            args.tunning_iters,  # original_total_iters * 0.4~0.45
+            'resume_iteration': args.resume_iter,
             'pruning_steps': args.pruning_steps,  # args.pruning_epochs * 2
             'initial_ratio': args.initial_ratio,  # 0.15
         }
@@ -272,11 +277,13 @@ def train(args,
                 for val_dataset in val_datasets:
                     # GMP pruner step 3: update params before summrizing sparsity, saving model or evaluation.
                     pruner.update_params()
+                    if args.prune_params_type == 'conv1x1_only':
+                        sparse = UnstructuredPruner.total_sparse_conv1x1(model)
+                    else:
+                        sparse = UnstructuredPruner.total_sparse(model)
                     logger.info(
                         "The current sparsity of the pruned model is: {}%".
-                        format(
-                            round(100 * UnstructuredPruner.total_sparse(model),
-                                  2)))
+                        format(round(100 * sparse, 2)))
                     mean_iou, acc, class_iou, _, _ = evaluate(
                         model, val_dataset, num_workers=num_workers)
                     class_ious.append(class_iou)
@@ -342,7 +349,7 @@ def train(args,
                             logger.info("[EVAL] Dataset {} IoU: {}\n".format(
                                 num, str(np.round(best_dataset_ious[num], 4))))
                         logger.info("[EVAL] Total IoU: \n" +
-                                    str(np.round(total_iou, 4)))
+                                    str(np.round(best_total_iou, 4)))
                         logger.info(
                             '[EVAL] The best model was saved at iter {}.'.
                             format(best_model_iter))
